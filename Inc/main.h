@@ -66,12 +66,18 @@ void Error_Handler(void);
 #define SM2_DIR_GPIO_Port GPIOA
 #define VCP_TX_Pin GPIO_PIN_2
 #define VCP_TX_GPIO_Port GPIOA
+#define SWITCH_1_Pin GPIO_PIN_3
+#define SWITCH_1_GPIO_Port GPIOA
+#define SWITCH_2_Pin GPIO_PIN_4
+#define SWITCH_2_GPIO_Port GPIOA
 #define SENSOR_Pin GPIO_PIN_8
 #define SENSOR_GPIO_Port GPIOA
 #define SWITCH_H_Pin GPIO_PIN_9
 #define SWITCH_H_GPIO_Port GPIOA
 #define SWITCH_V_Pin GPIO_PIN_10
 #define SWITCH_V_GPIO_Port GPIOA
+#define BUCK_ENABLE_Pin GPIO_PIN_11
+#define BUCK_ENABLE_GPIO_Port GPIOA
 #define SWDIO_Pin GPIO_PIN_13
 #define SWDIO_GPIO_Port GPIOA
 #define SWCLK_Pin GPIO_PIN_14
@@ -85,7 +91,15 @@ void Error_Handler(void);
 #define SM1_DIR_Pin GPIO_PIN_5
 #define SM1_DIR_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
-
+// Controle LED Nucleo :
+#define LEDON  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET)
+#define LEDOFF HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET)
+// Lecture interrupteurs sur carte :
+#define SW1 HAL_GPIO_ReadPin(SWITCH_1_GPIO_Port, SWITCH_1_Pin)
+#define SW2 HAL_GPIO_ReadPin(SWITCH_2_GPIO_Port, SWITCH_2_Pin)
+// Controle du buck qui genere 5V pour l'enceinte
+#define BUCKON  HAL_GPIO_WritePin(BUCK_ENABLE_GPIO_Port, BUCK_ENABLE_Pin, GPIO_PIN_SET)
+#define BUCKOFF HAL_GPIO_WritePin(BUCK_ENABLE_GPIO_Port, BUCK_ENABLE_Pin, GPIO_PIN_RESET)
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

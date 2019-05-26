@@ -24,6 +24,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "../PCA9685/pca9685.h"
+#include "../SX1509/sx1509.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,23 +45,32 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
+DMA_HandleTypeDef hdma_i2c1_tx;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim16;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+// Table des positions des servos de la figurine (sera envoyée par DMA)
+uint16_t servos[32]; // 16 servos, pour chacun, Ton et Toff
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM16_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -94,101 +105,6 @@ void smgo (int steps1, int dir1, int steps2, int dir2, int interval)
     }
 }
 
-// ==== JRO : SX1509 via I2C ======================================================
-
-// Note : addresse d'esclave codée en dur pour le moment : 0x3E
-// #define SX1509_ADDR 0x3E
-// Note 2 : la HAL STM32 requiert de shifter l'adresse pour prendre en compte le bit R/W :
-#define SX1509_ADDR 0x7C
-
-// Read one single-byte register from the slave. Provide the register's address as argument.
-uint8_t sxread (uint16_t reg)
-{
-    uint8_t val;
-    HAL_StatusTypeDef stat = HAL_I2C_Mem_Read(&hi2c1, SX1509_ADDR, reg, 1, &val, 1, 100000000);    // last parameter is timeout, no idea if it's long enough
-    if (stat == HAL_OK)
-    {
-        return val;
-    }
-    return 0xAA; // may be used to help identify transmission errors.
-}
-
-// Write one single-byte register to slave. Provide the register's address and the data byte as arguments
-uint8_t sxwrite (uint16_t reg, uint8_t val)
-{
-    HAL_StatusTypeDef stat = HAL_I2C_Mem_Write(&hi2c1, SX1509_ADDR, reg, 1, &val, 1, 100000000);    // last parameter is timeout, no idea if it's long enough
-        if (stat == HAL_OK)
-            return 0;
-        else
-            return 1;
-}
-
-// Vérification de présence du chip
-// Retourne 0 si tout baigne.
-uint8_t sxok ()
-{
-    uint8_t r1;
-    uint8_t rv = 0;
-    r1 = sxread (0x0A); // Register 0x0A should be 0x00 at reset
-    if (r1 == 0xAA)
-        rv &= 0x01;
-    r1 = sxread (0x0F); // Register 0x0F should be 0xFF at reset
-    if (r1 == 0xAA)
-        rv &= 0x02;
-    return rv;
-}
-
-// Init des broches du SX1509 en tant que sorties
-void sxinit ()
-{
-    // Disable input buffer (RegInputDisable)
-    sxwrite (0x00, 0xFF);   // port B
-    sxwrite (0x01, 0xFF);   // port A
-    // Disable pull-up (RegPullUp) => Disabled by default
-    // Enable open drain (RegOpenDrain) => Default is push-pull
-    // sxwrite (0x0A, 0xFF);   // port B
-    // sxwrite (0x0B, 0xFF);   // port A
-    // Set direction to output (RegDir) – by default all pins are inputs
-    sxwrite (0x0E, 0x00);   // port B
-    sxwrite (0x0F, 0x00);   // port A
-    // Enable oscillator (RegClock)
-    sxwrite (0x1E, 0x50);   // internal clock, clock pin as output, set to zero 0b0101_0000
-    // Configure LED driver clock and mode if relevant (RegMisc)
-    sxwrite (0x1F, 0x10);     // enable LED driver clock, 0b0001_0000
-    // Enable LED driver operation (RegLEDDriverEnable)
-    sxwrite (0x20, 0xFF);   // port B
-    sxwrite (0x21, 0xFF);   // port A
-    // Configure LED driver parameters (RegTOn, RegIOn, RegOff, RegTRise, RegTFall)
-    // Set RegData bit low => LED driver started
-}
-
-void sxout (uint8_t portA, uint8_t portB)
-{
-    sxwrite (0x10, portB);   // port B
-    sxwrite (0x11, portA);   // port A
-}
-
-// Controle LED Nucleo
-void ledon ()
-{
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
-}
-
-void ledoff ()
-{
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
-}
-
-void led (uint8_t state)
-{
-    if (state == 0)
-        ledoff ();
-    else
-        ledon ();
-}
-
-
-
 /* USER CODE END 0 */
 
 /**
@@ -220,25 +136,76 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   MX_TIM16_Init();
   MX_TIM3_Init();
+  MX_TIM2_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_Base_Start_IT(&htim6); // Start_IT necessaire pour activer l'interruption de ce timer.
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  sxinit(&hi2c1);
+  pca_init(&hi2c1);
+  //uint8_t val = 0x80;
+  uint16_t posi = 200;
+  int direction = 1;
   while (1)
-  {
+  {/*
+      val = val >> 1;
+      if (val == 0)
+          val = 0x80;
+      sxout(val, 0);*/
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-      HAL_Delay (500);
-      ledon ();
-      HAL_Delay (500);
-      ledoff ();
+
+      HAL_Delay (10);
+      //sxok();
+
+      if (SW2 == 0)
+          LEDON;
+      else
+          LEDOFF;
+
+      if (SW1 == 0)
+          BUCKON;
+      else
+          BUCKOFF;
+
+      /*uint8_t servos[64];
+      // My test servo is on channel 8
+      servos[32] = 0; // On LSB : turn out the output at t0
+      servos[33] = 0; // On MSB
+      servos[34] = 0; // Off LSB : turn off the output that the desired pulse length (205 to 410)
+      servos[35] = 1; // Off MSB (assuming 4096 counts = 20 ms)
+      pcawritebuff (PCA9685_LED0_ON_L, servos, 64);*/
+
+      //uint16_t servos[32];
+      servos[16] = 0;
+      // servos[17] = posi;
+      // servos[17] = 110; // LOWER LIMIT ES9051
+      // servos[17] = 530; // HIGHER LIMIT ES9051
+      servos[17] = 300;
+      pca_writebuff16b (&hi2c1, PCA9685_LED0_ON_L, servos, 64);
+
+
+
+/*
+      if (direction == 1)
+          posi += 10;
+      else
+          posi -= 10;
+
+      if (posi == 100)
+          direction = 1;
+      if (posi == 510)
+          direction = 0;
+*/
   }
   /* USER CODE END 3 */
 }
@@ -334,6 +301,52 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_SlaveConfigTypeDef sSlaveConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 0;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 0;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_DISABLE;
+  sSlaveConfig.InputTrigger = TIM_TS_ITR0;
+  if (HAL_TIM_SlaveConfigSynchronization(&htim2, &sSlaveConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
@@ -405,6 +418,44 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 50;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 57600;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
   * @brief TIM16 Initialization Function
   * @param None
   * @retval None
@@ -471,6 +522,21 @@ static void MX_USART2_UART_Init(void)
 
 }
 
+/** 
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void) 
+{
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
+
+}
+
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -486,16 +552,22 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, SM2_STEP_Pin|SM2_DIR_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, SM2_STEP_Pin|SM2_DIR_Pin|BUCK_ENABLE_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LED_Pin|SM1_STEP_Pin|SM1_DIR_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : SM2_STEP_Pin SM2_DIR_Pin */
-  GPIO_InitStruct.Pin = SM2_STEP_Pin|SM2_DIR_Pin;
+  /*Configure GPIO pins : SM2_STEP_Pin SM2_DIR_Pin BUCK_ENABLE_Pin */
+  GPIO_InitStruct.Pin = SM2_STEP_Pin|SM2_DIR_Pin|BUCK_ENABLE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : SWITCH_1_Pin SWITCH_2_Pin */
+  GPIO_InitStruct.Pin = SWITCH_1_Pin|SWITCH_2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : SENSOR_Pin SWITCH_H_Pin SWITCH_V_Pin */

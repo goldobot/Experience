@@ -22,6 +22,9 @@ local, and you've found our code helpful, please buy us a round!
 Distributed as-is; no warranty is given.
 ******************************************************************************/
 
+#ifndef _SX1509_REGISTERS_
+#define _SX1509_REGISTERS_
+
 #define 	REG_INPUT_DISABLE_B		0x00	//	RegInputDisableB Input buffer disable register _ I/O[15_8] (Bank B) 0000 0000
 #define 	REG_INPUT_DISABLE_A		0x01	//	RegInputDisableA Input buffer disable register _ I/O[7_0] (Bank A) 0000 0000
 #define 	REG_LONG_SLEW_B			0x02	//	RegLongSlewB Output buffer long slew register _ I/O[15_8] (Bank B) 0000 0000
@@ -136,7 +139,7 @@ Distributed as-is; no warranty is given.
 #define 	REG_RESET				0x7D	//	RegReset Software reset register 0000 0000
 #define 	REG_TEST_1				0x7E	//	RegTest1 Test register 0000 0000
 #define 	REG_TEST_2				0x7F	//	RegTest2 Test register 0000 0000
-
+/*
 uint8_t REG_I_ON[16] = {REG_I_ON_0, REG_I_ON_1, REG_I_ON_2, REG_I_ON_3,
 					REG_I_ON_4, REG_I_ON_5, REG_I_ON_6, REG_I_ON_7,
 					REG_I_ON_8, REG_I_ON_9, REG_I_ON_10, REG_I_ON_11,
@@ -161,3 +164,5 @@ uint8_t REG_T_FALL[16] = {0xFF, 0xFF, 0xFF, 0xFF,
 					REG_T_FALL_4, REG_T_FALL_5, REG_T_FALL_6, REG_T_FALL_7,
 					0xFF, 0xFF, 0xFF, 0xFF,
 					REG_T_FALL_12, REG_T_FALL_13, REG_T_FALL_14, REG_T_FALL_15};
+*/
+#endif // _SX1509_REGISTERS_

@@ -56,7 +56,8 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-
+extern DMA_HandleTypeDef hdma_i2c1_tx;
+extern TIM_HandleTypeDef htim6;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -196,6 +197,42 @@ void SysTick_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32f3xx.s).                    */
 /******************************************************************************/
+
+/**
+  * @brief This function handles DMA1 channel2 global interrupt.
+  */
+void DMA1_Channel2_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Channel2_IRQn 0 */
+
+  /* USER CODE END DMA1_Channel2_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_i2c1_tx);
+  /* USER CODE BEGIN DMA1_Channel2_IRQn 1 */
+
+  /* USER CODE END DMA1_Channel2_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM6 global and DAC1 underrun error interrupts.
+  */
+void TIM6_DAC1_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM6_DAC1_IRQn 0 */
+/*
+    static int div = 2;
+    if (div == 2) LEDON;
+    if (div == 1) LEDOFF;
+    if (div == 0) div = 3;
+    div--;
+*/
+
+
+  /* USER CODE END TIM6_DAC1_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim6);
+  /* USER CODE BEGIN TIM6_DAC1_IRQn 1 */
+
+  /* USER CODE END TIM6_DAC1_IRQn 1 */
+}
 
 /* USER CODE BEGIN 1 */
 

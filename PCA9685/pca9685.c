@@ -2,6 +2,9 @@
 
 #include "pca9685.h"
 
+// Table des positions des servos de la figurine (sera envoyée par DMA)
+uint16_t servos[16]; // 8 servos, pour chacun, Ton et Toff
+
 // Read one single-byte register from the slave. Provide the register's address as argument.
 uint8_t pca_read (I2C_HandleTypeDef *hi2c, uint16_t reg)
 {
@@ -57,4 +60,44 @@ void pca_init (I2C_HandleTypeDef *hi2c)
     pca_write (hi2c, PCA9685_MODE1_REG, 0x20);
     // Wait for oscillator to stabilize (0.5 ms)
     HAL_Delay (1);
+}
+
+// Transfert par DMA, limité à 8 canaux (l'Experience n'en utilise pas plus)
+// Le buffer passé en argument doit avoir une taille de 16 mots de 16 bits
+void pca_dma_start (I2C_HandleTypeDef *hi2c)
+{
+    // arguments :
+    // 1 : interface I2C
+    // 2 : adresse de l'esclave
+    // 3 : adresse du registre dans l'esclave : premier registre du premier canal du PCA9685
+    // 4 : taille de l'adresse de registre
+    // 5 : pointeur sur les données à envoyer
+    // 6 : nombre d'octets de données à envoyer
+    HAL_StatusTypeDef rv = HAL_I2C_Mem_Write_DMA(hi2c, PCA9685_ADDR, PCA9685_LED8_ON_L, 1, (uint8_t*) servos, 32);
+    //if (rv == HAL_OK)
+    //    return;
+
+    // Different type of transfer
+    uint8_t dat[] = {0x26, 0, 0, 150, 0};
+    //HAL_I2C_Master_Transmit_DMA(hi2c, PCA9685_ADDR, dat, 5);
+}
+
+// Surcharge de la callback DMA I²C
+void HAL_I2C_MemTxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+    // Cette callback est appelée en fin de transfert DMA. Elle va servir à relancer le transfert, après avoir
+    // entrelacé d'autres transferts I²C
+
+
+        // Tout d'abord, il semble necessaire de generer une condition STOP (le transfert DMA ne le fait pas) :
+            // https://community.st.com/s/question/0D50X00009XkeAqSAJ/difference-between-hali2cmemwrite-and-hali2cmemwritedma
+
+        //I2C_MasterTransmit_BTF(hi2c);
+
+        // Ensuite, on peut relancer le transfert :
+        HAL_I2C_Mem_Write_DMA(hi2c, PCA9685_ADDR, PCA9685_LED8_ON_L, 1, (uint8_t*) servos, 32);
+
+
+
+
 }

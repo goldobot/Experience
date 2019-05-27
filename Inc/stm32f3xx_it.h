@@ -57,8 +57,15 @@ void DebugMon_Handler(void);
 void PendSV_Handler(void);
 void SysTick_Handler(void);
 void DMA1_Channel2_IRQHandler(void);
+void TIM1_UP_TIM16_IRQHandler(void);
+void TIM2_IRQHandler(void);
 void TIM6_DAC1_IRQHandler(void);
 /* USER CODE BEGIN EFP */
+
+// Exported variables
+extern uint8_t sm_busy;
+extern uint16_t sm1_steps;
+extern uint16_t sm2_steps;
 
 /* USER CODE END EFP */
 

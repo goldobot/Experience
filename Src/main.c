@@ -56,8 +56,18 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+// Variables liées au controle des moteurs PaP
+extern uint8_t sm_busy;
+extern uint16_t sm1_steps;  // steps à effectuer pour le mouvement en cours
+extern uint16_t sm2_steps;
+uint16_t sm1_pos = 0;
+uint16_t sm2_pos = 0;
+
 // Table des positions des servos de la figurine (sera envoyée par DMA)
-uint16_t servos[32]; // 16 servos, pour chacun, Ton et Toff
+extern uint16_t servos[16]; // 8 servos, pour chacun, Ton et Toff
+
+// Mot d'état des rubans de LED du décors, envoyé au SX1509 par I²C après chaque transfer DMA au PCA9685
+uint8_t LEDs = 0;   // Eteintes par défaut
 
 /* USER CODE END PV */
 
@@ -105,6 +115,79 @@ void smgo (int steps1, int dir1, int steps2, int dir2, int interval)
     }
 }
 
+// ====== Pilotage des PaP par interruption de TIM16 et TIM2 ========
+
+// arguments : coordonnées (en mm) et vitesse (en mm/s) entre 1 et 100
+void move (uint16_t Y, uint16_t Z, uint16_t S)
+{
+    // Tests de sécurité :
+    if ((Y < 0 ) || (Y > 300)) return;
+    if ((Z < 0 ) || (Z > 100)) return;
+    if ((S < 1 ) || (S > 100)) return;
+
+    // Attendre la fin du mouvement précédent
+    while (sm_busy == 1);
+    // On active le busy
+    sm_busy = 1;
+    // Paramétrage des timers
+    // Constantes : 25 pas == 1 mm, fréquence des timers 1.44 MHz
+    // Axe 1 :
+    // Conversion de la position demandée en pas moteur :
+    uint16_t sm1_pos2 = Y * 25;
+    // Déterminaison du sens de déplacement et de la distance à franchir :
+    if (sm1_pos2 > sm1_pos)
+        {
+            // sens aller
+            sm1_steps = (sm1_pos2 - sm1_pos) << 1;  // nombre de pas à effectuer, x2 car l'ISR du timer doit s'exécuter deux fois par pas
+            // controle du signal de direction :
+            HAL_GPIO_WritePin(SM1_DIR_GPIO_Port, SM1_DIR_Pin, GPIO_PIN_SET);
+        }
+    else
+        {
+            // sens retour
+            sm1_steps = (sm1_pos - sm1_pos2) << 1;
+            // controle du signal de direction :
+            HAL_GPIO_WritePin(SM1_DIR_GPIO_Port, SM1_DIR_Pin, GPIO_PIN_RESET);
+        }
+    // Détermination de la vitesse du timer
+    // Pour le moment, vitesse fixe (10 mm/s => 250 Hz => periode timer == 5760 / 2 == 2880)
+    htim16.Instance->ARR = 2880;
+    htim16.Init.Period = 2880;
+
+    // Axe 2 :
+    // Conversion de la position demandée en pas moteur :
+    uint16_t sm2_pos2 = Z * 25;
+    // Déterminaison du sens de déplacement et de la distance à franchir :
+    if (sm2_pos2 > sm2_pos)
+        {
+            // sens aller
+            sm2_steps = (sm2_pos2 - sm2_pos) << 1;  // nombre de pas à effectuer, x2 car l'ISR du timer doit s'exécuter deux fois par pas
+            // controle du signal de direction :
+            HAL_GPIO_WritePin(SM2_DIR_GPIO_Port, SM2_DIR_Pin, GPIO_PIN_SET);
+        }
+    else
+        {
+            // sens retour
+            sm2_steps = (sm2_pos - sm2_pos2) << 1;
+            // controle du signal de direction :
+            HAL_GPIO_WritePin(SM2_DIR_GPIO_Port, SM2_DIR_Pin, GPIO_PIN_RESET);
+        }
+    // Détermination de la vitesse du timer
+    // Pour le moment, vitesse fixe (10 mm/s => 250 Hz => periode timer == 5760 / 2 == 2880)
+    htim2.Instance->ARR = 2880;
+    htim2.Init.Period = 2880;
+
+
+    // Lancement des timers
+    HAL_TIM_OC_Start_IT(&htim2, 0);
+    HAL_TIM_OC_Start_IT(&htim16, 0);
+
+    // Mise à jour de la position courante aux nouvelles coordonnées
+    sm1_pos = sm1_pos2;
+    sm2_pos = sm2_pos2;
+
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -149,13 +232,38 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  // demarrage du DMA
+
   sxinit(&hi2c1);
   pca_init(&hi2c1);
+  // Init des positions initiales des servos
+  int k;
+  for (k = 0; k < 32; k++)
+      servos[k] = 0;
+  servos[1] = 110;  // position des servos : valeur entre 110 et 530 pour un micro-servo ES9051
+  servos[3] = 110;
+  servos[5] = 110;
+  servos[7] = 110;
+  servos[9] = 110;
+  servos[11] = 110;
+  servos[13] = 110;
+  servos[15] = 0; // le 8eme canal pilote les LED des yeux de la figurine : valeur de 0 à 4095
+  // Lancement du DMA en boucle :
+  // pca_dma_start (&hi2c1);
   //uint8_t val = 0x80;
   uint16_t posi = 200;
   int direction = 1;
+
+
+  // HAL_TIM_OC_Start(&htim2, 0);
+
+
   while (1)
-  {/*
+  {
+      move (50, 20, 1);
+      move (0, 0, 1);
+
+      /*
       val = val >> 1;
       if (val == 0)
           val = 0x80;
@@ -166,12 +274,12 @@ int main(void)
 
       HAL_Delay (10);
       //sxok();
-
+/*
       if (SW2 == 0)
           LEDON;
       else
           LEDOFF;
-
+*/
       if (SW1 == 0)
           BUCKON;
       else
@@ -186,12 +294,12 @@ int main(void)
       pcawritebuff (PCA9685_LED0_ON_L, servos, 64);*/
 
       //uint16_t servos[32];
-      servos[16] = 0;
+      servos[0] = 0;
       // servos[17] = posi;
       // servos[17] = 110; // LOWER LIMIT ES9051
       // servos[17] = 530; // HIGHER LIMIT ES9051
-      servos[17] = 300;
-      pca_writebuff16b (&hi2c1, PCA9685_LED0_ON_L, servos, 64);
+      servos[1] = 300;
+      pca_writebuff16b (&hi2c1, PCA9685_LED8_ON_L, servos, 32);
 
 
 
@@ -312,25 +420,29 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 0 */
 
-  TIM_SlaveConfigTypeDef sSlaveConfig = {0};
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM2_Init 1 */
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
+  htim2.Init.Prescaler = 50;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 0;
+  htim2.Init.Period = 1000;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
   }
-  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_DISABLE;
-  sSlaveConfig.InputTrigger = TIM_TS_ITR0;
-  if (HAL_TIM_SlaveConfigSynchronization(&htim2, &sSlaveConfig) != HAL_OK)
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OC_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -340,9 +452,18 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
+  sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
+  sConfigOC.Pulse = 20;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
 
 }
 
@@ -467,23 +588,54 @@ static void MX_TIM16_Init(void)
 
   /* USER CODE END TIM16_Init 0 */
 
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
   /* USER CODE BEGIN TIM16_Init 1 */
 
   /* USER CODE END TIM16_Init 1 */
   htim16.Instance = TIM16;
-  htim16.Init.Prescaler = 0;
+  htim16.Init.Prescaler = 50;
   htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim16.Init.Period = 0;
+  htim16.Init.Period = 1000;
   htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim16.Init.RepetitionCounter = 0;
-  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim16) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OC_Init(&htim16) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
+  sConfigOC.Pulse = 20;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_OC_ConfigChannel(&htim16, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.BreakFilter = 0;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim16, &sBreakDeadTimeConfig) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM16_Init 2 */
 
   /* USER CODE END TIM16_Init 2 */
+  HAL_TIM_MspPostInit(&htim16);
 
 }
 
@@ -552,13 +704,13 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, SM2_STEP_Pin|SM2_DIR_Pin|BUCK_ENABLE_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, SM2_DIR_Pin|BUCK_ENABLE_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, LED_Pin|SM1_STEP_Pin|SM1_DIR_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, LED_Pin|SM1_DIR_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : SM2_STEP_Pin SM2_DIR_Pin BUCK_ENABLE_Pin */
-  GPIO_InitStruct.Pin = SM2_STEP_Pin|SM2_DIR_Pin|BUCK_ENABLE_Pin;
+  /*Configure GPIO pins : SM2_DIR_Pin BUCK_ENABLE_Pin */
+  GPIO_InitStruct.Pin = SM2_DIR_Pin|BUCK_ENABLE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -576,8 +728,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LED_Pin SM1_STEP_Pin SM1_DIR_Pin */
-  GPIO_InitStruct.Pin = LED_Pin|SM1_STEP_Pin|SM1_DIR_Pin;
+  /*Configure GPIO pins : LED_Pin SM1_DIR_Pin */
+  GPIO_InitStruct.Pin = LED_Pin|SM1_DIR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

@@ -230,7 +230,7 @@ void TIM1_UP_TIM16_IRQHandler(void)
     else
     {
         // fin du mouvement :
-        sm_busy = 0;
+        sm_busy--;
         HAL_TIM_OC_Stop(&htim16, 0);
     }
 
@@ -255,7 +255,7 @@ void TIM2_IRQHandler(void)
        else
        {
            // fin du mouvement :
-           sm_busy = 0;
+           sm_busy--;
            HAL_TIM_OC_Stop(&htim2, 0);
        }
 

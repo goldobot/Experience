@@ -9,9 +9,9 @@
 
 #define PCA9685_MODE1_REG       0x00
 #define PCA9685_MODE2_REG       0x01
+
 #define PCA9685_LED0_ON_L       0x06
 #define PCA9685_LED1_ON_L       0x0A
-
 #define PCA9685_LED2_ON_L       0x0E
 #define PCA9685_LED3_ON_L       0x12
 #define PCA9685_LED4_ON_L       0x16

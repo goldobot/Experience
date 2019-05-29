@@ -32,6 +32,8 @@ uint8_t sxwrite (I2C_HandleTypeDef *hi2c, uint16_t reg, uint8_t val)
 
 // Vérification de présence du chip
 // Retourne 0 si tout baigne.
+// Fonction utilisée lors de tests en phase de dev, pas utile.
+/*
 uint8_t sxok (I2C_HandleTypeDef *hi2c)
 {
     uint8_t r1;
@@ -43,7 +45,7 @@ uint8_t sxok (I2C_HandleTypeDef *hi2c)
     if (r1 == 0xAA)
         rv &= 0x02;
     return rv;
-}
+}*/
 
 
 // Init des broches du SX1509 en tant que sorties
@@ -71,6 +73,7 @@ void sxinit (I2C_HandleTypeDef *hi2c)
 }
 
 
+// Envoi des valeurs aux broches de sortie du module. Port A : broches 0 à 7 (bandeaux de LED du décors). Port B : inutilisé pour le moment
 void sxout (I2C_HandleTypeDef *hi2c, uint8_t portA, uint8_t portB)
 {
     sxwrite (hi2c, 0x10, portB);   // port B

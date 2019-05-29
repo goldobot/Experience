@@ -18,7 +18,7 @@
 
 uint8_t sxread (I2C_HandleTypeDef *hi2c, uint16_t reg);
 uint8_t sxwrite (I2C_HandleTypeDef *hi2c, uint16_t reg, uint8_t val);
-uint8_t sxok (I2C_HandleTypeDef *hi2c);
+//uint8_t sxok (I2C_HandleTypeDef *hi2c);
 void sxinit (I2C_HandleTypeDef *hi2c);
 void sxout (I2C_HandleTypeDef *hi2c, uint8_t portA, uint8_t portB);
 

@@ -121,14 +121,15 @@ void smgo (int steps1, int dir1, int steps2, int dir2, int interval)
 void move (uint16_t Y, uint16_t Z, uint16_t S)
 {
     // Tests de sécurité :
-    if ((Y < 0 ) || (Y > 300)) return;
-    if ((Z < 0 ) || (Z > 100)) return;
-    if ((S < 1 ) || (S > 100)) return;
+    if ((Y < 0 ) || (Y > 300)) return;  // portée horizontale
+    if ((Z < 0 ) || (Z > 100)) return;  // portée verticale
+    if ((S < 1 ) || (S > 100)) return;  // vitesse
+    if (SW1 == 0) return;               // interrupteur de mise en sécurité / "homing"
 
     // Attendre la fin du mouvement précédent
-    while (sm_busy == 1);
+    while (sm_busy > 0);
     // On active le busy
-    sm_busy = 1;
+    sm_busy = 2;    // 2 parce qu'il y a deux moteurs
     // Paramétrage des timers
     // Constantes : 25 pas == 1 mm, fréquence des timers 1.44 MHz
     // Axe 1 :
@@ -228,14 +229,18 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim6); // Start_IT necessaire pour activer l'interruption de ce timer.
+
+  // Init des périphériques I²C
+  sxinit(&hi2c1);
+  pca_init(&hi2c1);
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  // demarrage du DMA
 
-  sxinit(&hi2c1);
-  pca_init(&hi2c1);
+
   // Init des positions initiales des servos
   int k;
   for (k = 0; k < 32; k++)
@@ -255,66 +260,66 @@ int main(void)
   int direction = 1;
 
 
-  // HAL_TIM_OC_Start(&htim2, 0);
+  // Activation des servos "electron" et "toit"
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);     // Electron
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);     // Toit
+  // HAL_TIM_PWM_Start(&htim3, 2);     // Réserve
 
-
+  // première boucle infinie, dédiée à la detection de robot et au lancement de l'électron
+  uint8_t presence_robot = 0;
   while (1)
   {
-      move (50, 20, 1);
-      move (0, 0, 1);
-
-      /*
-      val = val >> 1;
-      if (val == 0)
-          val = 0x80;
-      sxout(val, 0);*/
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-      HAL_Delay (10);
-      //sxok();
-/*
-      if (SW2 == 0)
-          LEDON;
-      else
-          LEDOFF;
-*/
-      if (SW1 == 0)
-          BUCKON;
-      else
-          BUCKOFF;
+    HAL_Delay (10);
 
-      /*uint8_t servos[64];
-      // My test servo is on channel 8
-      servos[32] = 0; // On LSB : turn out the output at t0
-      servos[33] = 0; // On MSB
-      servos[34] = 0; // Off LSB : turn off the output that the desired pulse length (205 to 410)
-      servos[35] = 1; // Off MSB (assuming 4096 counts = 20 ms)
-      pcawritebuff (PCA9685_LED0_ON_L, servos, 64);*/
+    // On attend de détecter le robot, puis qu'il disparaisse de devant le capteur
+    if (presence_robot < 10)
+    {
+        // tester le capteur ultrasons et mettre à jour presence_robot le cas échéant
+        // on veut détecter le robot dix fois d'affilée pour être certain qu'on ne déclenche pas sur un malentendu.
+        if (SENSOR == GPIO_PIN_SET)
+            presence_robot++;
+        else
+            presence_robot = 0;
+    }
+    else
+    {
+        // on a détecté un robot durant dix cycles de 10 ms (histoire de filtrer tout bruit sur le capteur)
+        // re-tester le capteur ultrasons : si le robot a quitté le champ du capteur, on lance l'électron et on quitte cette boucle infinie
+        if (SENSOR == GPIO_PIN_RESET)
+        {
+            // SEQUENCE SERVO :
+            htim3.Instance->CCR1 = 256 + 0; // Mouvement à droite
+            HAL_Delay (500);                // Pause 0.5 seconde
+            htim3.Instance->CCR1 = 256 + 256; // Mouvement à gauche
+            HAL_Delay (500);               // Pause 0.5 seconde
+            htim3.Instance->CCR1 = 256 + 128;// Mouvement au centre
+            break;
+        }
+    }
 
-      //uint16_t servos[32];
-      servos[0] = 0;
-      // servos[17] = posi;
-      // servos[17] = 110; // LOWER LIMIT ES9051
-      // servos[17] = 530; // HIGHER LIMIT ES9051
-      servos[1] = 300;
-      pca_writebuff16b (&hi2c1, PCA9685_LED8_ON_L, servos, 32);
-
-
-
-/*
-      if (direction == 1)
-          posi += 10;
-      else
-          posi -= 10;
-
-      if (posi == 100)
-          direction = 1;
-      if (posi == 510)
-          direction = 0;
-*/
   }
+
+  // Deuxième boucle infinie, dédiée à la "choregraphie"
+  while (1)
+  {
+      // Servo déploiment du toit :
+
+
+  // Attitude de la figurine
+        servos[0] = 0;
+        servos[1] = 300;  // Servo ES9051 : valeurs utiles 110 à 530
+        pca_writebuff16b (&hi2c1, PCA9685_LED8_ON_L, servos, 32);
+   // Exemple de séquence de mouvement des PaP : chaque appel est bloquant, use wisely !
+      move (50, 20, 1);
+      move (0, 0, 1);
+
+      HAL_Delay (10);
+  }
+
   /* USER CODE END 3 */
 }
 

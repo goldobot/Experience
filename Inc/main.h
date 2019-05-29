@@ -100,6 +100,8 @@ void Error_Handler(void);
 // Controle du buck qui genere 5V pour l'enceinte
 #define BUCKON  HAL_GPIO_WritePin(BUCK_ENABLE_GPIO_Port, BUCK_ENABLE_Pin, GPIO_PIN_SET)
 #define BUCKOFF HAL_GPIO_WritePin(BUCK_ENABLE_GPIO_Port, BUCK_ENABLE_Pin, GPIO_PIN_RESET)
+// Lecture du capteur à ultrasons
+#define SENSOR HAL_GPIO_ReadPin(SENSOR_GPIO_Port, SENSOR_Pin)
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

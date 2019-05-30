@@ -35,7 +35,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+//#define JRO     // used to disable code during tests, MAKE SURE TO COMMENT OUT !!!
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -123,15 +123,14 @@ void move (uint16_t Y, uint16_t Z, uint16_t S)
     // Tests de sécurité :
     if ((Y < 0 ) || (Y > 300)) return;  // portée horizontale
     if ((Z < 0 ) || (Z > 100)) return;  // portée verticale
-    if ((S < 1 ) || (S > 100)) return;  // vitesse
+    if ((S < 3 ) || (S > 100)) return;  // vitesse
     if (SW1 == 0) return;               // interrupteur de mise en sécurité / "homing"
 
     // Attendre la fin du mouvement précédent
     while (sm_busy > 0);
     // On active le busy
     sm_busy = 2;    // 2 parce qu'il y a deux moteurs
-    // Paramétrage des timers
-    // Constantes : 25 pas == 1 mm, fréquence des timers 1.44 MHz
+    // Calcul du nombre de pas à effectuer, et de leur direction :
     // Axe 1 :
     // Conversion de la position demandée en pas moteur :
     uint16_t sm1_pos2 = Y * 25;
@@ -150,11 +149,6 @@ void move (uint16_t Y, uint16_t Z, uint16_t S)
             // controle du signal de direction :
             HAL_GPIO_WritePin(SM1_DIR_GPIO_Port, SM1_DIR_Pin, GPIO_PIN_RESET);
         }
-    // Détermination de la vitesse du timer
-    // Pour le moment, vitesse fixe (10 mm/s => 250 Hz => periode timer == 5760 / 2 == 2880)
-    htim16.Instance->ARR = 2880;
-    htim16.Init.Period = 2880;
-
     // Axe 2 :
     // Conversion de la position demandée en pas moteur :
     uint16_t sm2_pos2 = Z * 25;
@@ -173,20 +167,33 @@ void move (uint16_t Y, uint16_t Z, uint16_t S)
             // controle du signal de direction :
             HAL_GPIO_WritePin(SM2_DIR_GPIO_Port, SM2_DIR_Pin, GPIO_PIN_RESET);
         }
-    // Détermination de la vitesse du timer
-    // Pour le moment, vitesse fixe (10 mm/s => 250 Hz => periode timer == 5760 / 2 == 2880)
-    htim2.Instance->ARR = 2880;
-    htim2.Init.Period = 2880;
-
-
+    // Calcul des fréquences timers
+    // On commence par calculer la distance totale à parcourir :
+    volatile double dist = sqrt (((double) sm1_steps * (double) sm1_steps) + ((double) sm2_steps * (double) sm2_steps));
+    // Conversion de la vitesse de mm/s en pas/s :
+    volatile double spd = S * 50;   // 25 x 2 : 25 pas par tour + doublé car l'interruption du timer aura lieu deux fois par pas
+    // La figurine doit couvrir la distance "dist", en pas, à une vitesse de "spd", en pas par seconde
+    // Calcul de la durée du mouvement coordonné :
+    volatile double duration = dist / spd;    // resultat en secondes
+    // Calcul de la période pour le timer de SM1 :
+    // SM1 doit effectuer "sm1_steps" pas en "duration" secondes, donc la vitesse en pas/s sur cet axe est sm1_steps/duration : ce ratio est le nombre de pas à effectuer par seconde
+    volatile double sm1_spd = sm1_steps / duration;
+    // Le timer tourne à 1.44 MHz : pour produire la fréquence voulue, la période en cycles sera de 1.44 M / sm1_spd
+    volatile double sm1_period = 1440000.0 / sm1_spd; // cette valeur devrait être inférieure à 65535 si la vitesse de mouvement est d'au moins 3 mm/s
+    // SM2 : meme calculs :
+    volatile double sm2_spd = sm2_steps / duration;
+    volatile double sm2_period = 1440000.0 / sm2_spd; // cette valeur devrait être inférieure à 65535 si la vitesse de mouvement est d'au moins 3 mm/s
+    // Paramétrage des timers
+    htim16.Instance->ARR = (uint16_t) sm1_period;
+    htim16.Instance->CCR1 = ((uint16_t) sm1_period) >> 1;   // on centre l'interruption sur la période
+    htim2.Instance->ARR = (uint16_t) sm2_period;
+    htim2.Instance->CCR1 = ((uint16_t) sm2_period) >> 1;   // on centre l'interruption sur la période
     // Lancement des timers
     HAL_TIM_OC_Start_IT(&htim2, 0);
     HAL_TIM_OC_Start_IT(&htim16, 0);
-
     // Mise à jour de la position courante aux nouvelles coordonnées
     sm1_pos = sm1_pos2;
     sm2_pos = sm2_pos2;
-
 }
 
 /* USER CODE END 0 */
@@ -231,9 +238,10 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim6); // Start_IT necessaire pour activer l'interruption de ce timer.
 
   // Init des périphériques I²C
+#ifndef JRO
   sxinit(&hi2c1);
   pca_init(&hi2c1);
-
+#endif
 
   /* USER CODE END 2 */
 
@@ -242,6 +250,7 @@ int main(void)
 
 
   // Init des positions initiales des servos
+#ifndef JRO
   int k;
   for (k = 0; k < 32; k++)
       servos[k] = 0;
@@ -258,7 +267,7 @@ int main(void)
   //uint8_t val = 0x80;
   uint16_t posi = 200;
   int direction = 1;
-
+#endif
 
   // Activation des servos "electron" et "toit"
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);     // Electron
@@ -266,7 +275,11 @@ int main(void)
   // HAL_TIM_PWM_Start(&htim3, 2);     // Réserve
 
   // première boucle infinie, dédiée à la detection de robot et au lancement de l'électron
+#ifndef JRO
   uint8_t presence_robot = 0;
+#else
+  uint8_t presence_robot = 10;  // bypass du test de présence robot, UNIQUEMENT EN DEVELOPPEMENT
+#endif
   while (1)
   {
     /* USER CODE END WHILE */
@@ -289,8 +302,10 @@ int main(void)
     {
         // on a détecté un robot durant dix cycles de 10 ms (histoire de filtrer tout bruit sur le capteur)
         // re-tester le capteur ultrasons : si le robot a quitté le champ du capteur, on lance l'électron et on quitte cette boucle infinie
+#ifndef JRO
         if (SENSOR == GPIO_PIN_RESET)
         {
+#endif
             // SEQUENCE SERVO :
             htim3.Instance->CCR1 = 256 + 0; // Mouvement à droite
             HAL_Delay (500);                // Pause 0.5 seconde
@@ -298,7 +313,9 @@ int main(void)
             HAL_Delay (500);               // Pause 0.5 seconde
             htim3.Instance->CCR1 = 256 + 128;// Mouvement au centre
             break;
+#ifndef JRO
         }
+#endif
     }
 
   }
@@ -310,14 +327,19 @@ int main(void)
 
 
   // Attitude de la figurine
+#ifndef JRO
         servos[0] = 0;
         servos[1] = 300;  // Servo ES9051 : valeurs utiles 110 à 530
         pca_writebuff16b (&hi2c1, PCA9685_LED8_ON_L, servos, 32);
+#endif
    // Exemple de séquence de mouvement des PaP : chaque appel est bloquant, use wisely !
-      move (50, 20, 1);
-      move (0, 0, 1);
+   //   move (50, 20, 3);
+   //   move (0, 0, 100);
+   // Shorter moves for debugging, at closer speeds
+   move (2, 5, 10);
+   move (0, 0, 15);
 
-      HAL_Delay (10);
+    //  HAL_Delay (10);
   }
 
   /* USER CODE END 3 */
@@ -437,7 +459,7 @@ static void MX_TIM2_Init(void)
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 1000;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
@@ -492,9 +514,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 280;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 0;
+  htim3.Init.Period = 5120;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -517,7 +539,7 @@ static void MX_TIM3_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 384;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -605,7 +627,7 @@ static void MX_TIM16_Init(void)
   htim16.Init.Period = 1000;
   htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim16.Init.RepetitionCounter = 0;
-  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim16) != HAL_OK)
   {
     Error_Handler();

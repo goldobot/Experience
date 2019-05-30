@@ -224,10 +224,10 @@ void TIM1_UP_TIM16_IRQHandler(void)
   /* USER CODE BEGIN TIM1_UP_TIM16_IRQn 0 */
 
     // Ce timer controle le moteur PaP SM1
-    // On vient de faire un pas sur cet axe : tester et décrémenter :
-    if (sm1_steps > 0)
-        sm1_steps--;
-    else
+    // On vient de faire un demi-pas sur cet axe : tester et décrémenter :
+
+    sm1_steps--;
+    if (sm1_steps == 0)
     {
         // fin du mouvement :
         sm_busy--;
@@ -249,15 +249,15 @@ void TIM2_IRQHandler(void)
   /* USER CODE BEGIN TIM2_IRQn 0 */
 
     // Ce timer controle le moteur PaP SM2
-    // On vient de faire un pas sur cet axe : tester et décrémenter :
-       if (sm2_steps > 0)
-           sm2_steps--;
-       else
-       {
-           // fin du mouvement :
-           sm_busy--;
-           HAL_TIM_OC_Stop(&htim2, 0);
-       }
+    // On vient de faire un demi-pas sur cet axe : tester et décrémenter :
+
+    sm2_steps--;
+    if (sm2_steps == 0)
+    {
+        // fin du mouvement :
+        sm_busy--;
+        HAL_TIM_OC_Stop(&htim2, 0);
+    }
 
   /* USER CODE END TIM2_IRQn 0 */
   HAL_TIM_IRQHandler(&htim2);

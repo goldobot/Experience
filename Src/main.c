@@ -35,7 +35,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-//#define JRO     // used to disable code during tests, MAKE SURE TO COMMENT OUT !!!
+#define JRO     // used to disable code during tests, MAKE SURE TO COMMENT OUT !!!
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -60,7 +60,7 @@ UART_HandleTypeDef huart2;
 extern uint8_t sm_busy;
 extern uint16_t sm1_steps;  // steps à effectuer pour le mouvement en cours
 extern uint16_t sm2_steps;
-uint16_t sm1_pos = 0;
+uint16_t sm1_pos = 0;   // position courante
 uint16_t sm2_pos = 0;
 
 // Table des positions des servos de la figurine (sera envoyée par DMA)
@@ -96,6 +96,7 @@ static void MX_TIM6_Init(void);
 // steps2 : nombre de pas à éffectuer, moteur 2
 // dir2 : direction, moteur 2 (0 ou non-zero)
 // interval : durée pour effectuer un pas, en millisecondes
+/* FONCTION OBSOLETE
 void smgo (int steps1, int dir1, int steps2, int dir2, int interval)
 {
     int count = (steps1 > steps2) ? steps1 : steps2;
@@ -114,7 +115,7 @@ void smgo (int steps1, int dir1, int steps2, int dir2, int interval)
         HAL_GPIO_WritePin(SM2_STEP_GPIO_Port, SM2_STEP_Pin, GPIO_PIN_RESET);
     }
 }
-
+*/
 // ====== Pilotage des PaP par interruption de TIM16 et TIM2 ========
 
 // arguments : coordonnées (en mm) et vitesse (en mm/s) entre 1 et 100
@@ -130,6 +131,8 @@ void move (uint16_t Y, uint16_t Z, uint16_t S)
     while (sm_busy > 0);
     // On active le busy
     sm_busy = 2;    // 2 parce qu'il y a deux moteurs
+    // Nettoyage de signal : évite un temps trop court entre la dernière impulsion du mouvement précédent et la première impulsion du nouveau mouvement
+    HAL_Delay (1);
     // Calcul du nombre de pas à effectuer, et de leur direction :
     // Axe 1 :
     // Conversion de la position demandée en pas moteur :
@@ -183,6 +186,12 @@ void move (uint16_t Y, uint16_t Z, uint16_t S)
     // SM2 : meme calculs :
     volatile double sm2_spd = sm2_steps / duration;
     volatile double sm2_period = 1440000.0 / sm2_spd; // cette valeur devrait être inférieure à 65535 si la vitesse de mouvement est d'au moins 3 mm/s
+
+#ifdef JRO // raccourcissement de la trajectoire réelle afin d'aider à la visualisation sur scope
+    sm1_steps /= 25;
+    sm2_steps /= 25;
+#endif
+
     // Paramétrage des timers
     htim16.Instance->ARR = (uint16_t) sm1_period;
     htim16.Instance->CCR1 = ((uint16_t) sm1_period) >> 1;   // on centre l'interruption sur la période
@@ -195,6 +204,23 @@ void move (uint16_t Y, uint16_t Z, uint16_t S)
     sm1_pos = sm1_pos2;
     sm2_pos = sm2_pos2;
 }
+
+// Pilotage des servos de la figurine, fonction à interface simplifiée
+// Argument : un tableau de huit valeurs 8 bits pour les 7 servos et la PWM des LED des yeux
+// Cette fonction s'exécute en un peu moins de 1 ms, et elle est bloquante.
+void pose (uint16_t* positions)
+{
+    servos[1] = positions[0];
+    servos[3] = positions[1];
+    servos[5] = positions[2];
+    servos[7] = positions[3];
+    servos[9] = positions[4];
+    servos[11] = positions[5];
+    servos[13] = positions[6];
+    servos[15] = positions[7];
+    pca_writebuff16b (&hi2c1, PCA9685_LED8_ON_L, servos, 32);   // Remplacer PCA9685_LED8_ON_L par le premier canal utilisé sur la figurine, si nécessaire
+}
+
 
 /* USER CODE END 0 */
 
@@ -252,21 +278,9 @@ int main(void)
   // Init des positions initiales des servos
 #ifndef JRO
   int k;
-  for (k = 0; k < 32; k++)
+  for (k = 0; k < 16; k++)
       servos[k] = 0;
-  servos[1] = 110;  // position des servos : valeur entre 110 et 530 pour un micro-servo ES9051
-  servos[3] = 110;
-  servos[5] = 110;
-  servos[7] = 110;
-  servos[9] = 110;
-  servos[11] = 110;
-  servos[13] = 110;
-  servos[15] = 0; // le 8eme canal pilote les LED des yeux de la figurine : valeur de 0 à 4095
-  // Lancement du DMA en boucle :
-  // pca_dma_start (&hi2c1);
-  //uint8_t val = 0x80;
-  uint16_t posi = 200;
-  int direction = 1;
+  pose (uint16_t[]{320, 320, 320, 320, 320, 320, 320, 0});  // Servos en position médiane, LED éteintes
 #endif
 
   // Activation des servos "electron" et "toit"
@@ -336,8 +350,10 @@ int main(void)
    //   move (50, 20, 3);
    //   move (0, 0, 100);
    // Shorter moves for debugging, at closer speeds
-   move (2, 5, 10);
+   move (2, 5, 10);     // "move" est non-bloquante, elle retourne des que le mouvement commence
+   pose ((uint16_t[]){110, 530, 110, 530, 110, 530, 110, 2000});   // "pose" est bloquante et dure 1 ms. Les commandes de servo (ES9051) doivent être entre 110 et 530, la commande de LED peut aller de 0 à 4095
    move (0, 0, 15);
+   pose ((uint16_t[]){530, 110, 530, 110, 530, 110, 530, 3000});
 
     //  HAL_Delay (10);
   }

@@ -88,37 +88,9 @@ static void MX_TIM6_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-// ==== JRO : Moteurs PAP via GPIO =============================================
-
-// Déplacement simultané à vitesse égale
-// steps1 : nombre de pas à éffectuer, moteur 1
-// dir1 : direction, moteur 1 (0 ou non-zero)
-// steps2 : nombre de pas à éffectuer, moteur 2
-// dir2 : direction, moteur 2 (0 ou non-zero)
-// interval : durée pour effectuer un pas, en millisecondes
-/* FONCTION OBSOLETE
-void smgo (int steps1, int dir1, int steps2, int dir2, int interval)
-{
-    int count = (steps1 > steps2) ? steps1 : steps2;
-    interval /= 2;  // demi-période
-    // Signaux direction :
-    HAL_GPIO_WritePin(SM1_DIR_GPIO_Port, SM1_DIR_Pin, (dir1 == 0) ? GPIO_PIN_RESET : GPIO_PIN_SET);
-    HAL_GPIO_WritePin(SM2_DIR_GPIO_Port, SM2_DIR_Pin, (dir2 == 0) ? GPIO_PIN_RESET : GPIO_PIN_SET);
-    while (count--)
-    {
-        if (steps1-- > 0)
-            HAL_GPIO_WritePin(SM1_STEP_GPIO_Port, SM1_STEP_Pin, GPIO_PIN_SET);
-        if (steps2-- > 0)
-            HAL_GPIO_WritePin(SM2_STEP_GPIO_Port, SM2_STEP_Pin, GPIO_PIN_SET);
-        HAL_Delay (interval);
-        HAL_GPIO_WritePin(SM1_STEP_GPIO_Port, SM1_STEP_Pin, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(SM2_STEP_GPIO_Port, SM2_STEP_Pin, GPIO_PIN_RESET);
-    }
-}
-*/
 // ====== Pilotage des PaP par interruption de TIM16 et TIM2 ========
 
-// arguments : coordonnées (en mm) et vitesse (en mm/s) entre 1 et 100
+// arguments : coordonnées (en mm) et vitesse (en mm/s) entre 3 et 100
 void move (uint16_t Y, uint16_t Z, uint16_t S)
 {
     // Tests de sécurité :
@@ -218,7 +190,9 @@ void pose (uint16_t* positions)
     servos[11] = positions[5];
     servos[13] = positions[6];
     servos[15] = positions[7];
+#ifndef JRO
     pca_writebuff16b (&hi2c1, PCA9685_LED8_ON_L, servos, 32);   // Remplacer PCA9685_LED8_ON_L par le premier canal utilisé sur la figurine, si nécessaire
+#endif
 }
 
 
@@ -337,15 +311,8 @@ int main(void)
   // Deuxième boucle infinie, dédiée à la "choregraphie"
   while (1)
   {
-      // Servo déploiment du toit :
+   // Attitude de la figurine
 
-
-  // Attitude de la figurine
-#ifndef JRO
-        servos[0] = 0;
-        servos[1] = 300;  // Servo ES9051 : valeurs utiles 110 à 530
-        pca_writebuff16b (&hi2c1, PCA9685_LED8_ON_L, servos, 32);
-#endif
    // Exemple de séquence de mouvement des PaP : chaque appel est bloquant, use wisely !
    //   move (50, 20, 3);
    //   move (0, 0, 100);
